@@ -5,6 +5,7 @@ require('./tracing');
 const express = require('express');
 const winston = require('winston');
 const { trace, context, metrics } = require('@opentelemetry/api');
+const { OpenTelemetryTransportV3 } = require('@opentelemetry/winston-transport');
 
 const app = express();
 app.use(express.json());
@@ -17,24 +18,17 @@ const inventory = {
   'item-004': { quantity: 7, name: 'Widget D' },
 };
 
-// Winston logger that injects traceId and spanId from active span context
+// Winston logger — OTel transport sends logs via OTLP; Console transport for stdout
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
-    winston.format.printf(({ level, message, timestamp, ...meta }) => {
-      const activeSpan = trace.getActiveSpan();
-      let traceId = '';
-      let spanId = '';
-      if (activeSpan) {
-        const spanContext = activeSpan.spanContext();
-        traceId = spanContext.traceId;
-        spanId = spanContext.spanId;
-      }
-      return JSON.stringify({ timestamp, level, message, traceId, spanId, ...meta });
-    })
+    winston.format.json()
   ),
-  transports: [new winston.transports.Console()],
+  transports: [
+    new winston.transports.Console(),
+    new OpenTelemetryTransportV3(),
+  ],
 });
 
 // Custom metrics

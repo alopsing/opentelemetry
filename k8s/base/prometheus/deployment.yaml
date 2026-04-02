@@ -21,6 +21,8 @@ spec:
           args:
             - "--config.file=/etc/prometheus/prometheus.yml"
             - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention.time=2h"
+            - "--storage.tsdb.retention.size=256MB"
             - "--web.console.libraries=/usr/share/prometheus/console_libraries"
             - "--web.console.templates=/usr/share/prometheus/consoles"
             - "--web.enable-lifecycle"
@@ -57,7 +59,8 @@ spec:
           configMap:
             name: prometheus-config
         - name: prometheus-storage
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 512Mi
 ---
 apiVersion: v1
 kind: Service

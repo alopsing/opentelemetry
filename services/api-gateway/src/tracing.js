@@ -4,31 +4,33 @@ const { NodeSDK } = require('@opentelemetry/sdk-node');
 const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
 const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc');
 const { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-grpc');
+const { OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-grpc');
 const { Resource } = require('@opentelemetry/resources');
 const { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION, SEMRESATTRS_DEPLOYMENT_ENVIRONMENT } = require('@opentelemetry/semantic-conventions');
 const { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
+const { BatchLogRecordProcessor } = require('@opentelemetry/sdk-logs');
 
 const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://otel-collector:4317';
 
-const traceExporter = new OTLPTraceExporter({
-  url: otlpEndpoint,
-});
-
-const metricExporter = new OTLPMetricExporter({
-  url: otlpEndpoint,
+const resource = new Resource({
+  [SEMRESATTRS_SERVICE_NAME]: 'api-gateway',
+  [SEMRESATTRS_SERVICE_VERSION]: '1.0.0',
+  [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: process.env.NODE_ENV || 'development',
 });
 
 const sdk = new NodeSDK({
-  resource: new Resource({
-    [SEMRESATTRS_SERVICE_NAME]: 'api-gateway',
-    [SEMRESATTRS_SERVICE_VERSION]: '1.0.0',
-    [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: process.env.NODE_ENV || 'development',
-  }),
-  traceExporter,
+  resource,
+  traceExporter: new OTLPTraceExporter({ url: otlpEndpoint }),
   metricReader: new PeriodicExportingMetricReader({
-    exporter: metricExporter,
+    exporter: new OTLPMetricExporter({ url: otlpEndpoint }),
     exportIntervalMillis: 10000,
   }),
+  logRecordProcessors: [
+    new BatchLogRecordProcessor(
+      new OTLPLogExporter({ url: otlpEndpoint }),
+      { scheduledDelayMillis: 5000 }
+    ),
+  ],
   instrumentations: [
     getNodeAutoInstrumentations({
       '@opentelemetry/instrumentation-fs': { enabled: false },

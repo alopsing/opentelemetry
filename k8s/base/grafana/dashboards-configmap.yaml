@@ -12,7 +12,7 @@ data:
       "schemaVersion": 36,
       "refresh": "10s",
       "time": {
-        "from": "now-15m",
+        "from": "now-1h",
         "to": "now"
       },
       "timezone": "browser",
@@ -149,7 +149,7 @@ data:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_bucket[5m])) by (le))",
+              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_milliseconds_bucket[5m])) by (le))",
               "instant": true,
               "legendFormat": "p95 Duration (ms)",
               "refId": "A"
@@ -269,7 +269,7 @@ data:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_bucket[5m])) by (le))",
+              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_milliseconds_bucket[5m])) by (le))",
               "legendFormat": "p95 Duration (ms)",
               "refId": "A"
             }
@@ -302,7 +302,7 @@ data:
           "targets": [
             {
               "datasource": { "type": "loki", "uid": "loki" },
-              "expr": "{job=\"api-gateway\"} | json",
+              "expr": "{job=~\"api-gateway|order-service|inventory-service\"}",
               "legendFormat": "",
               "maxLines": 100,
               "refId": "A"
