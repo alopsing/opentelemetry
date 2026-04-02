@@ -1,0 +1,340 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: otel-poc
+data:
+  otel-poc.json: |
+    {
+      "title": "OpenTelemetry POC",
+      "uid": "otel-poc-dashboard",
+      "version": 1,
+      "schemaVersion": 36,
+      "refresh": "10s",
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "timezone": "browser",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Overview",
+          "type": "row",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+        },
+        {
+          "id": 2,
+          "title": "Total Requests",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
+          "options": {
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 1000 },
+                  { "color": "red", "value": 5000 }
+                ]
+              },
+              "mappings": [],
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(increase(otel_api_gateway_requests_total[5m]))",
+              "instant": true,
+              "legendFormat": "Total Requests",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Error Rate",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 1 },
+          "options": {
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              },
+              "mappings": [],
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(otel_api_gateway_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(otel_api_gateway_requests_total[5m])) * 100",
+              "instant": true,
+              "legendFormat": "Error Rate %",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Avg Request Duration",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
+          "options": {
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 200 },
+                  { "color": "red", "value": 500 }
+                ]
+              },
+              "mappings": [],
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_bucket[5m])) by (le))",
+              "instant": true,
+              "legendFormat": "p95 Duration (ms)",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Metrics",
+          "type": "row",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
+        },
+        {
+          "id": 6,
+          "title": "Request Rate per Service",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "none" },
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": { "type": "linear" },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": { "group": "A", "mode": "none" },
+                "thresholdsStyle": { "mode": "off" }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "rate(otel_api_gateway_requests_total[1m])",
+              "legendFormat": "API Gateway",
+              "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "rate(otel_order_service_orders_total[1m])",
+              "legendFormat": "Order Service",
+              "refId": "B"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "rate(otel_inventory_service_checks_total[1m])",
+              "legendFormat": "Inventory Service",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Request Duration p95",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "none" },
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": { "type": "linear" },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": { "group": "A", "mode": "none" },
+                "thresholdsStyle": { "mode": "off" }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              },
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_bucket[5m])) by (le))",
+              "legendFormat": "p95 Duration (ms)",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "Logs",
+          "type": "row",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+        },
+        {
+          "id": 9,
+          "title": "API Gateway Logs",
+          "type": "logs",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 15 },
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": false,
+            "maxDataPoints": 100
+          },
+          "targets": [
+            {
+              "datasource": { "type": "loki", "uid": "loki" },
+              "expr": "{job=\"api-gateway\"} | json",
+              "legendFormat": "",
+              "maxLines": 100,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "Traces",
+          "type": "row",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }
+        },
+        {
+          "id": 11,
+          "title": "Distributed Traces — Jaeger",
+          "type": "text",
+          "datasource": { "type": "jaeger", "uid": "jaeger" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "options": {
+            "content": "## Exploring Traces with Jaeger\n\nTo explore distributed traces, follow these steps:\n\n1. **Open the Explore view** — click the compass icon (Explore) in the left sidebar.\n2. **Select the Jaeger datasource** — choose `jaeger` from the datasource drop-down at the top of the Explore page.\n3. **Search by Service** — use the **Search** tab to filter traces by:\n   - `Service Name`: e.g. `api-gateway`, `order-service`, `inventory-service`\n   - `Operation Name`: narrow to a specific endpoint or operation\n   - `Tags`: filter by span attributes such as `http.status_code=500`\n   - `Min / Max Duration`: isolate slow requests\n4. **Open a Trace** — click any result row to open the flame-graph timeline view showing the full call tree across services.\n5. **Correlate with Logs** — copy a `traceID` from the trace view and paste it into the Loki query panel above using `{job=\"api-gateway\"} | json | traceID=\"<paste-here\"` to find the correlated log lines.\n\n> **Tip:** Grafana can automatically link log lines to traces when the `traceId` field is present in structured logs and the Jaeger datasource is configured as a derived field in the Loki datasource settings.",
+            "mode": "markdown"
+          }
+        }
+      ],
+      "templating": { "list": [] },
+      "annotations": { "list": [] },
+      "links": [],
+      "tags": ["opentelemetry", "otel", "poc"],
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "liveNow": false,
+      "style": "dark"
+    }

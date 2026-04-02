@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: otel-poc
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: "15s"
+
+      - name: Jaeger
+        type: jaeger
+        uid: jaeger
+        access: proxy
+        url: http://jaeger:16686
+        editable: true
+
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki:3100
+        editable: true
+        jsonData:
+          derivedFields:
+            - datasourceUid: jaeger
+              matcherRegex: '"traceId":"(\w+)"'
+              name: TraceID
+              url: '$${__value.raw}'
+              urlDisplayLabel: 'View Trace'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: otel-poc
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.4.0
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Admin"
+            - name: GF_AUTH_DISABLE_LOGIN_FORM
+              value: "true"
+            - name: GF_FEATURE_TOGGLES_ENABLE
+              value: "traceqlEditor"
+            - name: GF_LOG_LEVEL
+              value: "info"
+          ports:
+            - name: web
+              containerPort: 3000
+              protocol: TCP
+          volumeMounts:
+            - name: datasources-volume
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider-volume
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards-volume
+              mountPath: /var/lib/grafana/dashboards
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: datasources-volume
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider-volume
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards-volume
+          configMap:
+            name: grafana-dashboards
+        - name: grafana-storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: otel-poc
+  labels:
+    app: grafana
+spec:
+  selector:
+    app: grafana
+  ports:
+    - name: web
+      port: 3000
+      targetPort: 3000
+      nodePort: 30300
+      protocol: TCP
+  type: NodePort
