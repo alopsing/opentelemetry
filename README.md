@@ -221,44 +221,101 @@ The Loki datasource in Grafana has a derived field on `traceId` — clicking it 
 
 The **OpenTelemetry POC** dashboard (auto-provisioned, no manual setup) is under **Dashboards → OpenTelemetry POC folder**.
 
-| Row | Panels |
-|---|---|
-| Overview | Total requests (stat), Error rate % (stat), p95 latency (stat) |
-| Metrics | Request rate per service (time series), Request duration p95 (time series) |
-| Logs | Live log stream from api-gateway with traceId links |
-| Traces | Instructions for Jaeger Explore |
+| Row | Panels | Notes |
+|---|---|---|
+| Overview | Business requests (stat), Error rate % (stat), p95 latency (stat) | `/health` probe traffic excluded |
+| Metrics | Request rate by route + status (time series), p95 + p50 latency by route (time series) | Broken down by route and outcome |
+| Metrics | Inventory stock levels (bar gauge), Order outcomes (donut) | Business-level panels |
+| Logs | All services live logs (filtered), Errors only | Click `traceid` → jumps to Jaeger trace |
+| Traces | Correlation guide + useful Loki queries | Instructions for logs↔traces workflow |
+
+### Logs → Traces Correlation
+
+The logs panels show `traceid` as a clickable derived field. Clicking it opens the exact trace in Jaeger showing the full 3-service call tree for that request.
+
+To find all logs for a single request across all 3 services:
+```logql
+{job=~"api-gateway|order-service|inventory-service"} |= "<paste-traceid>"
+```
 
 ### Useful Prometheus Queries
 
 ```promql
-# Request rate per service
-rate(otel_api_gateway_requests_total[1m])
-rate(otel_order_service_orders_total[1m])
-rate(otel_inventory_service_checks_total[1m])
+# Business request rate (excludes /health probes)
+sum(rate(otel_api_gateway_requests_total{route!="/health"}[1m])) by (route)
 
-# p95 latency
-histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_bucket[5m])) by (le))
+# p95 latency by route (Prometheus appends _milliseconds to metrics with unit "ms")
+histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_milliseconds_bucket{route!="/health"}[5m])) by (le, route))
 
-# Error rate
-sum(rate(otel_api_gateway_requests_total{status=~"5.."}[5m]))
-  / sum(rate(otel_api_gateway_requests_total[5m])) * 100
+# Error rate (5xx only, business traffic)
+100 * sum(rate(otel_api_gateway_requests_total{status=~"5..", route!="/health"}[5m]))
+  / sum(rate(otel_api_gateway_requests_total{route!="/health"}[5m]))
+
+# Order outcomes breakdown
+sum(increase(otel_order_service_orders_total[1h])) by (status)
+
+# Inventory stock levels
+otel_inventory_service_stock_level
 ```
 
 ### Useful Loki Queries
 
 ```logql
-# All api-gateway logs
-{job="api-gateway"} | json
+# Business logs only (filter out noisy /health probe logs)
+{job=~"api-gateway|order-service|inventory-service"} | json body | body != "Request processed"
 
-# Only errors
-{job="api-gateway"} | json | level="error"
+# Errors and warnings across all services
+{job=~"api-gateway|order-service|inventory-service", level=~"ERROR|WARN"}
 
-# Filter by traceId
-{job="api-gateway"} | json | traceId="<your-trace-id>"
+# All logs for a specific request (paste any traceid)
+{job=~"api-gateway|order-service|inventory-service"} |= "<your-trace-id>"
 
-# Order processing logs across all services
-{job=~"api-gateway|order-service|inventory-service"} | json | message=~"order"
+# Rejected orders (out-of-stock)
+{job="order-service"} |= "rejected"
 ```
+
+> **Note:** Logs are shipped via OTLP and stored in Loki with `job` and `level` as stream labels. The log body is a JSON string — use `|=` for fast substring search or `| json body` to parse for structured filtering.
+
+---
+
+## Load Testing
+
+Four scripts in `scripts/` for generating realistic traffic patterns:
+
+| Script | Purpose | Default |
+|---|---|---|
+| `load-test-basic.sh [rps] [duration]` | Steady stream of random valid orders | 5 req/s for 60s |
+| `load-test-spike.sh [cycles]` | Alternates quiet (2 req/s) → burst (30 req/s) | 5 cycles |
+| `load-test-errors.sh [duration]` | Mixed traffic: 40% success, 30% out-of-stock (409), 30% bad requests | 60s |
+| `load-test-continuous.sh [workers] [rps_per_worker]` | Parallel workers, runs until Ctrl+C — best for keeping dashboards populated | 3 workers × 2 req/s |
+
+```bash
+# Keep dashboards populated while exploring
+./scripts/load-test-continuous.sh
+
+# Generate a visible traffic spike in Grafana
+./scripts/load-test-spike.sh 3
+
+# Populate error traces, error logs, and error rate metrics
+./scripts/load-test-errors.sh 120
+
+# Steady load at custom rate
+./scripts/load-test-basic.sh 10 120   # 10 req/s for 2 minutes
+```
+
+Override the target URL with the `GATEWAY_URL` env var:
+```bash
+GATEWAY_URL=http://localhost:8080 ./scripts/load-test-continuous.sh
+```
+
+### Inventory items reference
+
+| Item | Stock | Behaviour |
+|---|---|---|
+| `item-001` | 42 | Always succeeds |
+| `item-002` | 0 | Always returns 409 out-of-stock |
+| `item-003` | 15 | Always succeeds |
+| `item-004` | 7 | Always succeeds |
 
 ---
 
@@ -268,6 +325,11 @@ sum(rate(otel_api_gateway_requests_total{status=~"5.."}[5m]))
 opentelemetry/
 ├── bootstrap.sh                  # One-command setup script
 ├── kind-config.yaml              # Kind cluster with host port mappings
+├── scripts/
+│   ├── load-test-basic.sh        # Steady load
+│   ├── load-test-spike.sh        # Quiet/burst cycles
+│   ├── load-test-errors.sh       # Error scenario mix
+│   └── load-test-continuous.sh   # Parallel workers, runs until Ctrl+C
 ├── services/
 │   ├── api-gateway/
 │   │   ├── src/

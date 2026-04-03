@@ -8,15 +8,16 @@ data:
     {
       "title": "OpenTelemetry POC",
       "uid": "otel-poc-dashboard",
-      "version": 1,
+      "version": 2,
       "schemaVersion": 36,
       "refresh": "10s",
-      "time": {
-        "from": "now-1h",
-        "to": "now"
-      },
+      "time": { "from": "now-1h", "to": "now" },
       "timezone": "browser",
+      "graphTooltip": 1,
+      "tags": ["opentelemetry", "otel", "poc"],
+      "editable": true,
       "panels": [
+
         {
           "id": 1,
           "title": "Overview",
@@ -24,70 +25,66 @@ data:
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
         },
+
         {
           "id": 2,
-          "title": "Total Requests",
+          "title": "Business Requests (excl. /health)",
+          "description": "Total order requests through the API gateway in the last 5 minutes",
           "type": "stat",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
           "options": {
-            "reduceOptions": {
-              "calcs": ["lastNotNull"],
-              "fields": "",
-              "values": false
-            },
-            "orientation": "auto",
-            "textMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "colorMode": "background",
             "graphMode": "area",
-            "justifyMode": "auto"
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "orientation": "auto"
           },
           "fieldConfig": {
             "defaults": {
+              "unit": "short",
               "color": { "mode": "thresholds" },
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   { "color": "green", "value": null },
-                  { "color": "orange", "value": 1000 },
-                  { "color": "red", "value": 5000 }
+                  { "color": "orange", "value": 500 },
+                  { "color": "red", "value": 2000 }
                 ]
-              },
-              "mappings": [],
-              "unit": "short"
+              }
             },
             "overrides": []
           },
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "sum(increase(otel_api_gateway_requests_total[5m]))",
+              "expr": "sum(increase(otel_api_gateway_requests_total{route!=\"/health\"}[5m]))",
               "instant": true,
-              "legendFormat": "Total Requests",
+              "legendFormat": "Requests",
               "refId": "A"
             }
           ]
         },
+
         {
           "id": 3,
-          "title": "Error Rate",
+          "title": "Error Rate (5xx)",
+          "description": "Percentage of requests returning 5xx, excluding /health probes",
           "type": "stat",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 4, "w": 8, "x": 8, "y": 1 },
           "options": {
-            "reduceOptions": {
-              "calcs": ["lastNotNull"],
-              "fields": "",
-              "values": false
-            },
-            "orientation": "auto",
-            "textMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "colorMode": "background",
             "graphMode": "area",
-            "justifyMode": "auto"
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "orientation": "auto"
           },
           "fieldConfig": {
             "defaults": {
+              "unit": "percent",
               "color": { "mode": "thresholds" },
               "thresholds": {
                 "mode": "absolute",
@@ -96,42 +93,39 @@ data:
                   { "color": "orange", "value": 1 },
                   { "color": "red", "value": 5 }
                 ]
-              },
-              "mappings": [],
-              "unit": "percent"
+              }
             },
             "overrides": []
           },
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "sum(rate(otel_api_gateway_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(otel_api_gateway_requests_total[5m])) * 100",
+              "expr": "100 * sum(rate(otel_api_gateway_requests_total{status=~\"5..\", route!=\"/health\"}[5m])) / sum(rate(otel_api_gateway_requests_total{route!=\"/health\"}[5m]))",
               "instant": true,
-              "legendFormat": "Error Rate %",
+              "legendFormat": "Error %",
               "refId": "A"
             }
           ]
         },
+
         {
           "id": 4,
-          "title": "Avg Request Duration",
+          "title": "p95 Latency",
+          "description": "95th percentile request duration for POST /order",
           "type": "stat",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
           "options": {
-            "reduceOptions": {
-              "calcs": ["lastNotNull"],
-              "fields": "",
-              "values": false
-            },
-            "orientation": "auto",
-            "textMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "colorMode": "background",
             "graphMode": "area",
-            "justifyMode": "auto"
+            "justifyMode": "auto",
+            "textMode": "auto",
+            "orientation": "auto"
           },
           "fieldConfig": {
             "defaults": {
+              "unit": "ms",
               "color": { "mode": "thresholds" },
               "thresholds": {
                 "mode": "absolute",
@@ -140,22 +134,21 @@ data:
                   { "color": "orange", "value": 200 },
                   { "color": "red", "value": 500 }
                 ]
-              },
-              "mappings": [],
-              "unit": "ms"
+              }
             },
             "overrides": []
           },
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_milliseconds_bucket[5m])) by (le))",
+              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_milliseconds_bucket{route!=\"/health\"}[5m])) by (le))",
               "instant": true,
-              "legendFormat": "p95 Duration (ms)",
+              "legendFormat": "p95 ms",
               "refId": "A"
             }
           ]
         },
+
         {
           "id": 5,
           "title": "Metrics",
@@ -163,178 +156,252 @@ data:
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
         },
+
         {
           "id": 6,
-          "title": "Request Rate per Service",
+          "title": "Request Rate per Service (excl. /health)",
           "type": "timeseries",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
           "options": {
-            "tooltip": { "mode": "multi", "sort": "none" },
-            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+            "tooltip": { "mode": "multi", "sort": "desc" },
+            "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["lastNotNull", "max"] }
           },
           "fieldConfig": {
             "defaults": {
+              "unit": "reqps",
               "color": { "mode": "palette-classic" },
               "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
                 "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-                "lineInterpolation": "linear",
                 "lineWidth": 2,
-                "pointSize": 5,
-                "scaleDistribution": { "type": "linear" },
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
                 "showPoints": "never",
-                "spanNulls": false,
-                "stacking": { "group": "A", "mode": "none" },
-                "thresholdsStyle": { "mode": "off" }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null }
-                ]
-              },
-              "unit": "reqps"
+                "spanNulls": false
+              }
             },
             "overrides": []
           },
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "rate(otel_api_gateway_requests_total[1m])",
-              "legendFormat": "API Gateway",
+              "expr": "sum(rate(otel_api_gateway_requests_total{route!=\"/health\"}[1m])) by (route)",
+              "legendFormat": "api-gateway {{route}}",
               "refId": "A"
             },
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "rate(otel_order_service_orders_total[1m])",
-              "legendFormat": "Order Service",
+              "expr": "sum(rate(otel_order_service_orders_total[1m])) by (status)",
+              "legendFormat": "order-service ({{status}})",
               "refId": "B"
             },
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "rate(otel_inventory_service_checks_total[1m])",
-              "legendFormat": "Inventory Service",
+              "expr": "sum(rate(otel_inventory_service_checks_total[1m])) by (result)",
+              "legendFormat": "inventory ({{result}})",
               "refId": "C"
             }
           ]
         },
+
         {
           "id": 7,
-          "title": "Request Duration p95",
+          "title": "Request Duration p95 by Route (excl. /health)",
           "type": "timeseries",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
           "options": {
-            "tooltip": { "mode": "multi", "sort": "none" },
-            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+            "tooltip": { "mode": "multi", "sort": "desc" },
+            "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["lastNotNull", "max"] }
           },
           "fieldConfig": {
             "defaults": {
+              "unit": "ms",
               "color": { "mode": "palette-classic" },
               "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
                 "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-                "lineInterpolation": "linear",
                 "lineWidth": 2,
-                "pointSize": 5,
-                "scaleDistribution": { "type": "linear" },
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
                 "showPoints": "never",
-                "spanNulls": false,
-                "stacking": { "group": "A", "mode": "none" },
-                "thresholdsStyle": { "mode": "off" }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null }
-                ]
-              },
-              "unit": "ms"
+                "spanNulls": false
+              }
             },
             "overrides": []
           },
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_milliseconds_bucket[5m])) by (le))",
-              "legendFormat": "p95 Duration (ms)",
+              "expr": "histogram_quantile(0.95, sum(rate(otel_api_gateway_request_duration_ms_milliseconds_bucket{route!=\"/health\"}[5m])) by (le, route))",
+              "legendFormat": "p95 {{route}}",
+              "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "histogram_quantile(0.50, sum(rate(otel_api_gateway_request_duration_ms_milliseconds_bucket{route!=\"/health\"}[5m])) by (le, route))",
+              "legendFormat": "p50 {{route}}",
+              "refId": "B"
+            }
+          ]
+        },
+
+        {
+          "id": 8,
+          "title": "Inventory Stock Levels",
+          "type": "bargauge",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 12, "x": 0, "y": 14 },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 5 },
+                  { "color": "green", "value": 10 }
+                ]
+              },
+              "min": 0
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "otel_inventory_service_stock_level",
+              "legendFormat": "{{item_name}} ({{item_id}})",
+              "instant": true,
               "refId": "A"
             }
           ]
         },
+
         {
-          "id": 8,
+          "id": 9,
+          "title": "Order Outcomes",
+          "type": "piechart",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 12, "x": 12, "y": 14 },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "pieType": "donut",
+            "displayLabels": ["name", "percent"],
+            "legend": { "displayMode": "table", "placement": "right", "showLegend": true }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "palette-classic" }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(increase(otel_order_service_orders_total[1h])) by (status)",
+              "legendFormat": "{{status}}",
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+
+        {
+          "id": 10,
           "title": "Logs",
           "type": "row",
           "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 }
         },
+
         {
-          "id": 9,
-          "title": "API Gateway Logs",
+          "id": 11,
+          "title": "All Services — Live Logs",
+          "description": "Logs from all 3 services. Click the traceid field to jump to the trace in Jaeger.",
           "type": "logs",
           "datasource": { "type": "loki", "uid": "loki" },
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 15 },
+          "gridPos": { "h": 10, "w": 16, "x": 0, "y": 20 },
           "options": {
             "dedupStrategy": "none",
             "enableLogDetails": true,
             "prettifyLogMessage": false,
             "showCommonLabels": false,
-            "showLabels": false,
+            "showLabels": true,
             "showTime": true,
             "sortOrder": "Descending",
-            "wrapLogMessage": false,
-            "maxDataPoints": 100
+            "wrapLogMessage": false
           },
           "targets": [
             {
               "datasource": { "type": "loki", "uid": "loki" },
-              "expr": "{job=~\"api-gateway|order-service|inventory-service\"}",
-              "legendFormat": "",
+              "expr": "{job=~\"api-gateway|order-service|inventory-service\"} | json body | body != \"Request processed\" or body =~ \"(?i)error|fail|reject|warn\"",
+              "maxLines": 200,
+              "refId": "A"
+            }
+          ]
+        },
+
+        {
+          "id": 12,
+          "title": "Errors Only",
+          "description": "Error and warning logs across all services. Each traceid links to the full trace in Jaeger.",
+          "type": "logs",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "gridPos": { "h": 10, "w": 8, "x": 16, "y": 20 },
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": true,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "loki", "uid": "loki" },
+              "expr": "{job=~\"api-gateway|order-service|inventory-service\", level=~\"ERROR|WARN\"}",
               "maxLines": 100,
               "refId": "A"
             }
           ]
         },
+
         {
-          "id": 10,
+          "id": 13,
           "title": "Traces",
           "type": "row",
           "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 }
         },
+
         {
-          "id": 11,
-          "title": "Distributed Traces — Jaeger",
+          "id": 14,
+          "title": "How to correlate Logs → Traces",
           "type": "text",
-          "datasource": { "type": "jaeger", "uid": "jaeger" },
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 31 },
           "options": {
-            "content": "## Exploring Traces with Jaeger\n\nTo explore distributed traces, follow these steps:\n\n1. **Open the Explore view** — click the compass icon (Explore) in the left sidebar.\n2. **Select the Jaeger datasource** — choose `jaeger` from the datasource drop-down at the top of the Explore page.\n3. **Search by Service** — use the **Search** tab to filter traces by:\n   - `Service Name`: e.g. `api-gateway`, `order-service`, `inventory-service`\n   - `Operation Name`: narrow to a specific endpoint or operation\n   - `Tags`: filter by span attributes such as `http.status_code=500`\n   - `Min / Max Duration`: isolate slow requests\n4. **Open a Trace** — click any result row to open the flame-graph timeline view showing the full call tree across services.\n5. **Correlate with Logs** — copy a `traceID` from the trace view and paste it into the Loki query panel above using `{job=\"api-gateway\"} | json | traceID=\"<paste-here\"` to find the correlated log lines.\n\n> **Tip:** Grafana can automatically link log lines to traces when the `traceId` field is present in structured logs and the Jaeger datasource is configured as a derived field in the Loki datasource settings.",
-            "mode": "markdown"
+            "mode": "markdown",
+            "content": "## Logs → Traces correlation\n\n**From the Logs panel above:**\n1. Expand any log line by clicking it → find the `traceid` field\n2. Click the `traceid` value — it links directly to that trace in Jaeger\n\n**From Jaeger Explore:**\n1. Click the compass icon (Explore) in the left sidebar\n2. Select the **Jaeger** datasource\n3. Search by service: `api-gateway`, `order-service`, or `inventory-service`\n4. Click any trace row to see the full flame-graph across all 3 services\n\n**Filter logs for a specific trace:**\n```\n{job=~\"api-gateway|order-service|inventory-service\"} |= \"<paste-traceid-here>\"\n```\nThis shows every log line from all 3 services that handled that one request.\n\n**Useful Loki queries:**\n```\n# Business logs only (no health probes)\n{job=~\"api-gateway|order-service|inventory-service\"} | json body | body != \"Request processed\"\n\n# Errors only\n{job=~\"api-gateway|order-service|inventory-service\", level=\"ERROR\"}\n\n# Rejected orders\n{job=\"order-service\"} |= \"rejected\"\n```"
           }
         }
+
       ],
       "templating": { "list": [] },
       "annotations": { "list": [] },
       "links": [],
-      "tags": ["opentelemetry", "otel", "poc"],
-      "editable": true,
+      "style": "dark",
       "fiscalYearStartMonth": 0,
-      "graphTooltip": 1,
-      "liveNow": false,
-      "style": "dark"
+      "liveNow": false
     }
