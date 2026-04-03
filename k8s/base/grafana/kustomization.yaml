@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - dashboard-provider-configmap.yaml
   - dashboards-configmap.yaml
+  - collector-dashboard-configmap.yaml
   - deployment.yaml

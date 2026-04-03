@@ -7,32 +7,33 @@ A complete OpenTelemetry observability POC running on a local Kubernetes cluster
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Kind Cluster                         │
-│                                                             │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────────┐ │
-│  │ api-gateway │───▶│ order-service│───▶│inventory-service│ │
-│  │  :3000      │    │  :3001       │    │   :3002        │ │
-│  └──────┬──────┘    └──────┬───────┘    └───────┬────────┘ │
-│         │                  │                    │           │
-│         └──────────────────┴────────────────────┘           │
-│                            │ OTLP gRPC (:4317)              │
-│                     ┌──────▼──────┐                         │
-│                     │OTel Collector│                        │
-│                     └──┬───┬───┬──┘                         │
-│                        │   │   │                            │
-│              ┌─────────┘   │   └──────────┐                 │
-│              ▼             ▼              ▼                  │
-│          ┌───────┐  ┌──────────┐  ┌─────────┐              │
-│          │Jaeger │  │Prometheus│  │  Loki   │              │
-│          │(traces)│ │(metrics) │  │ (logs)  │              │
-│          └───┬───┘  └────┬─────┘  └────┬────┘              │
-│              └───────────┴─────────────┘                    │
-│                          │                                   │
-│                    ┌─────▼──────┐                           │
-│                    │  Grafana   │                           │
-│                    └────────────┘                           │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                          Kind Cluster (2 nodes)                   │
+│                                                                   │
+│  ┌─────────────┐    ┌──────────────┐    ┌────────────────┐       │
+│  │ api-gateway │───▶│ order-service│───▶│inventory-service│       │
+│  │  :3000 ×2   │    │  :3001 ×2   │    │   :3002 ×2     │       │
+│  └──────┬──────┘    └──────┬───────┘    └───────┬────────┘       │
+│         │                  │                    │                  │
+│         └──────────────────┴────────────────────┘                 │
+│                            │ OTLP gRPC (:4317)                    │
+│                     ┌──────▼──────┐                               │
+│                     │OTel Collector│ (:8888 self-metrics)         │
+│                     └──┬───┬───┬──┘                               │
+│                        │   │   │                                  │
+│              ┌─────────┘   │   └──────────┐                       │
+│              ▼             ▼              ▼                        │
+│          ┌───────┐  ┌──────────┐  ┌─────────┐                    │
+│          │Jaeger │  │Prometheus│  │  Loki   │                    │
+│          │badger │  │+ Alerts  │  │  PVC    │                    │
+│          │  PVC  │  └────┬─────┘  └────┬────┘                    │
+│          └───┬───┘       │  ┌──────────┘                         │
+│              │            ▼  ▼                                    │
+│              │     ┌─────────────┐   ┌──────────────┐            │
+│              │     │ Alertmanager│   │   Grafana    │            │
+│              │     └─────────────┘   │(2 dashboards)│            │
+│              └─────────────────────▶ └──────────────┘            │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 ### Services
@@ -48,10 +49,11 @@ A complete OpenTelemetry observability POC running on a local Kubernetes cluster
 | Component | Image | Role |
 |---|---|---|
 | OTel Collector | `otel/opentelemetry-collector-contrib:0.100.0` | Receives OTLP, routes to backends |
-| Jaeger | `jaegertracing/all-in-one:1.57` | Distributed trace storage and UI |
-| Prometheus | `prom/prometheus:v2.51.0` | Metrics scraping and storage |
-| Loki | `grafana/loki:2.9.0` | Log aggregation |
-| Grafana | `grafana/grafana:10.4.0` | Unified observability UI |
+| Jaeger | `jaegertracing/all-in-one:1.57` | Distributed trace storage (badger, PVC) |
+| Prometheus | `prom/prometheus:v2.51.0` | Metrics scraping, alerting rules, PVC |
+| Alertmanager | `prom/alertmanager:v0.27.0` | Routes Prometheus alerts |
+| Loki | `grafana/loki:2.9.0` | Log aggregation (PVC) |
+| Grafana | `grafana/grafana:10.4.0` | Unified observability UI (2 dashboards) |
 
 ---
 
@@ -67,18 +69,24 @@ A complete OpenTelemetry observability POC running on a local Kubernetes cluster
 
 ## Quick Start
 
+> **If you have a previous cluster:** the Kind config now includes a worker node. Recreate first:
+> ```bash
+> kind delete cluster --name otel-poc
+> ```
+
 ```bash
 ./bootstrap.sh
 ```
 
-The script runs 7 steps:
+The script runs 8 steps:
 1. Checks prerequisites (`docker`, `kind`, `kubectl`)
-2. Creates a Kind cluster named `otel-poc` (idempotent — skips if exists)
+2. Creates a Kind cluster named `otel-poc` with 1 control-plane + 1 worker node (idempotent — skips if exists)
 3. Builds Docker images for all 3 services
 4. Loads images into Kind (no registry needed)
 5. Applies all Kubernetes manifests via `kubectl apply -k k8s/overlays/local/`
-6. Waits for all deployments to be ready (5 min timeout each)
-7. Prints access URLs
+6. Installs `metrics-server` (required for HPA / `kubectl top`)
+7. Waits for all deployments to be ready (5 min timeout each)
+8. Prints access URLs
 
 ---
 
@@ -219,7 +227,9 @@ The Loki datasource in Grafana has a derived field on `traceId` — clicking it 
 
 ## Grafana Dashboards
 
-The **OpenTelemetry POC** dashboard (auto-provisioned, no manual setup) is under **Dashboards → OpenTelemetry POC folder**.
+Two dashboards are auto-provisioned under **Dashboards → OpenTelemetry POC folder** (no manual setup).
+
+### Dashboard 1: OpenTelemetry POC (Business)
 
 | Row | Panels | Notes |
 |---|---|---|
@@ -228,6 +238,16 @@ The **OpenTelemetry POC** dashboard (auto-provisioned, no manual setup) is under
 | Metrics | Inventory stock levels (bar gauge), Order outcomes (donut) | Business-level panels |
 | Logs | All services live logs (filtered), Errors only | Click `traceid` → jumps to Jaeger trace |
 | Traces | Correlation guide + useful Loki queries | Instructions for logs↔traces workflow |
+
+### Dashboard 2: OTel Collector Operations
+
+| Panel | Metric | Purpose |
+|---|---|---|
+| Spans Received/Exported | `otelcol_receiver_accepted_spans` | Ingest rate |
+| Export Failures | `otelcol_exporter_send_failed_spans` | Exporter errors |
+| Queue Size | `otelcol_exporter_queue_size` | Backpressure |
+| Collector Memory | `otelcol_process_memory_rss` | Resource usage |
+| Log Records Sent | `otelcol_exporter_sent_log_records` | Log pipeline health |
 
 ### Logs → Traces Correlation
 
@@ -278,35 +298,78 @@ otel_inventory_service_stock_level
 
 ---
 
-## Load Testing
+## Load Testing & Scenario Simulation
 
-Four scripts in `scripts/` for generating realistic traffic patterns:
+### Production simulator (`scripts/simulate.sh`)
 
-| Script | Purpose | Default |
+The main simulation tool. Runs named scenarios that model real production traffic patterns — each controls request mix, concurrency, rate, and duration.
+
+```bash
+./scripts/simulate.sh <scenario> [--url URL] [--rate N] [--dur S] [--conc N]
+```
+
+| Scenario | What it does | Default rate | Default duration |
+|---|---|---|---|
+| `normal` | Steady baseline: ~85% 2xx, ~10% 409 (out-of-stock), ~5% 4xx | 10 req/s | 120s |
+| `degraded` | Elevated errors: ~40% 2xx, ~30% 409, ~30% 4xx/misc — triggers `HighErrorRate` alert | 15 req/s | 180s |
+| `spike` | Quiet → ramp up → peak → ramp down → quiet — shows HPA and latency spike in Grafana | 40 req/s peak | ~165s |
+| `soak` | Long-running low-rate — surfaces memory leaks, connection exhaustion, metric drift | 3 req/s | 30 min |
+| `recovery` | 90s of bad traffic then 90s of good — watch alerts fire then auto-resolve | 10 req/s | 180s |
+| `chaos` | All failure modes simultaneously: 4xx, 5xx, malformed JSON, thundering herd bursts | 20 req/s | 120s |
+
+**Request types in the mix:**
+
+| Type | Expected code | What it exercises |
 |---|---|---|
-| `load-test-basic.sh [rps] [duration]` | Steady stream of random valid orders | 5 req/s for 60s |
-| `load-test-spike.sh [cycles]` | Alternates quiet (2 req/s) → burst (30 req/s) | 5 cycles |
-| `load-test-errors.sh [duration]` | Mixed traffic: 40% success, 30% out-of-stock (409), 30% bad requests | 60s |
-| `load-test-continuous.sh [workers] [rps_per_worker]` | Parallel workers, runs until Ctrl+C — best for keeping dashboards populated | 3 workers × 2 req/s |
+| Happy path (in-stock item) | 200 | Full 3-service trace, metrics increment |
+| Out-of-stock (`item-002`) | 409 | Business rejection path, warn log, span attribute |
+| Unknown item (`item-999`) | 404 | inventory-service not-found path |
+| Missing field | 400 | order-service field validation |
+| Malformed JSON | 400 | Express JSON parser rejection |
+| Wrong HTTP method | 404 | Gateway routing |
+| Large payload | 200/400 | Request body handling |
+| Thundering herd burst | mixed | 10 parallel requests in one shot |
+
+**Examples:**
 
 ```bash
-# Keep dashboards populated while exploring
-./scripts/load-test-continuous.sh
+# Populate all 3 signal types with realistic traffic
+./scripts/simulate.sh normal
 
-# Generate a visible traffic spike in Grafana
-./scripts/load-test-spike.sh 3
+# Trigger the HighErrorRate Prometheus alert
+./scripts/simulate.sh degraded
 
-# Populate error traces, error logs, and error rate metrics
-./scripts/load-test-errors.sh 120
+# Watch HPA scale up in real time (open another terminal: kubectl get hpa -n otel-poc -w)
+./scripts/simulate.sh spike
 
-# Steady load at custom rate
-./scripts/load-test-basic.sh 10 120   # 10 req/s for 2 minutes
+# Watch alerts fire then resolve — good for testing Alertmanager routing
+./scripts/simulate.sh recovery
+
+# Chaos — everything at once
+./scripts/simulate.sh chaos
+
+# Custom rate and duration
+./scripts/simulate.sh normal --rate 20 --dur 300
+
+# Soak test overnight
+./scripts/simulate.sh soak --dur 28800
 ```
 
-Override the target URL with the `GATEWAY_URL` env var:
+Override the gateway URL:
 ```bash
-GATEWAY_URL=http://localhost:8080 ./scripts/load-test-continuous.sh
+GATEWAY_URL=http://localhost:8080 ./scripts/simulate.sh normal
 ```
+
+### Basic scripts (in `scripts/`)
+
+Simpler scripts for quick tests:
+
+| Script | Purpose |
+|---|---|
+| `load-test-basic.sh [rps] [duration]` | Steady valid orders |
+| `load-test-spike.sh [cycles]` | Quiet/burst cycles |
+| `load-test-errors.sh [duration]` | Fixed error mix |
+| `load-test-continuous.sh [workers] [rps/worker]` | Background workers, runs until Ctrl+C |
 
 ### Inventory items reference
 
@@ -316,6 +379,7 @@ GATEWAY_URL=http://localhost:8080 ./scripts/load-test-continuous.sh
 | `item-002` | 0 | Always returns 409 out-of-stock |
 | `item-003` | 15 | Always succeeds |
 | `item-004` | 7 | Always succeeds |
+| `item-999` | — | Returns 404 (not in inventory map) |
 
 ---
 
@@ -324,8 +388,9 @@ GATEWAY_URL=http://localhost:8080 ./scripts/load-test-continuous.sh
 ```
 opentelemetry/
 ├── bootstrap.sh                  # One-command setup script
-├── kind-config.yaml              # Kind cluster with host port mappings
+├── kind-config.yaml              # Kind cluster: 1 control-plane + 1 worker + host ports
 ├── scripts/
+│   ├── simulate.sh               # Production scenario simulator (main)
 │   ├── load-test-basic.sh        # Steady load
 │   ├── load-test-spike.sh        # Quiet/burst cycles
 │   ├── load-test-errors.sh       # Error scenario mix
@@ -336,22 +401,108 @@ opentelemetry/
 │   │   │   ├── tracing.js        # OTel SDK init (loaded first)
 │   │   │   └── index.js          # Express app
 │   │   ├── package.json
-│   │   └── Dockerfile
+│   │   └── Dockerfile            # Non-root user (appuser:appgroup)
 │   ├── order-service/            # same structure
 │   └── inventory-service/        # same structure
 └── k8s/
     ├── base/                     # Kustomize base — source of truth
     │   ├── kustomization.yaml
     │   ├── namespace.yaml
-    │   ├── collector/            # OTel Collector deployment + config
-    │   ├── grafana/              # Grafana + datasources + dashboards
-    │   ├── jaeger/
-    │   ├── loki/
-    │   ├── prometheus/
-    │   └── services/             # app Deployments and Services
+    │   ├── rbac/                 # ServiceAccounts + Prometheus ClusterRole/ClusterRoleBinding
+    │   ├── network-policies/     # 9 NetworkPolicy objects (deny-all + explicit allows)
+    │   ├── collector/            # OTel Collector: configmap + deployment (securityContext)
+    │   ├── grafana/              # Grafana + datasources + 2 dashboards
+    │   ├── jaeger/               # Jaeger all-in-one + badger PVC
+    │   ├── loki/                 # Loki + PVC
+    │   ├── prometheus/           # Prometheus + PVC + alerts + recording rules
+    │   ├── alertmanager/         # Alertmanager deployment + config
+    │   └── services/             # app Deployments, Services, HPA, PDB
     └── overlays/
         └── local/                # Kind-specific overlay (environment: local label)
             └── kustomization.yaml
+```
+
+---
+
+## Production-Grade Features
+
+This POC includes the following hardening applied for local Kind development. The same patterns translate directly to EKS via a new Kustomize overlay.
+
+### Security
+
+| Feature | What's configured |
+|---|---|
+| Non-root containers | All services run as UID 1001; collector as UID 65534 (nobody); Jaeger as UID 1000; Grafana as UID 472 |
+| Read-only filesystem | `readOnlyRootFilesystem: true` on all containers; `/tmp` emptyDir where Node.js needs to write |
+| Dropped capabilities | `capabilities: drop: [ALL]` on all containers |
+| No privilege escalation | `allowPrivilegeEscalation: false` on all containers |
+| Seccomp | `seccompProfile: RuntimeDefault` on all app pods |
+| ServiceAccounts | Dedicated ServiceAccount per component (9 total) |
+| RBAC | Prometheus ClusterRole scoped to GET/LIST/WATCH on pods, nodes, services, endpoints |
+| NetworkPolicies | Deny-all default with explicit allow rules; each service can only reach its upstream dependency and the OTel Collector |
+
+### Reliability
+
+| Feature | What's configured |
+|---|---|
+| Replicas | All 3 app services run 2 replicas |
+| PodDisruptionBudgets | `minAvailable: 1` for all 3 services |
+| HorizontalPodAutoscaler | CPU 60% target, min 2 / max 5 replicas (requires metrics-server) |
+| Pod anti-affinity | Preferred spread across nodes (soft rule, works on single-node too) |
+| Persistent storage | Prometheus (2Gi PVC), Loki (2Gi PVC), Jaeger (2Gi PVC via badger) |
+| Jaeger storage | badger (file-based, embedded in all-in-one) — survives pod restarts |
+| Prometheus retention | 7-day time retention, 1800MB size limit — prevents disk exhaustion |
+| Collector resilience | `sending_queue` + `retry_on_failure` on all exporters |
+
+### Alerting
+
+Prometheus alert rules (`k8s/base/prometheus/configmap.yaml`):
+
+| Alert | Condition |
+|---|---|
+| `HighErrorRate` | >5% 5xx responses over 5 minutes |
+| `HighLatencyP95` | p95 request duration >1000ms over 5 minutes |
+| `CollectorExporterQueueNearFull` | Exporter queue >80% full |
+| `CollectorDroppingData` | Collector is dropping spans/metrics/logs |
+
+Alertmanager is deployed and wired to Prometheus. For local dev, alerts are null-routed (no external webhook). To route real alerts, edit `k8s/base/alertmanager/configmap.yaml` and add a `receiver` with your Slack/PagerDuty webhook.
+
+Recording rules pre-compute SLO metrics (request rate, error rate, p95 latency) for fast dashboard queries.
+
+### EKS Migration Path
+
+The local overlay (`k8s/overlays/local/`) already patches `NODE_ENV=local` on all three app services, so `deployment.environment=local` flows through to Loki labels and trace resource attributes. The base sets `NODE_ENV=production` which the EKS overlay can leave as-is.
+
+All environment differences are isolated in `k8s/overlays/`. To target EKS:
+
+```bash
+mkdir -p k8s/overlays/eks
+```
+
+```yaml
+# k8s/overlays/eks/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+commonLabels:
+  environment: production
+patches:
+  # Use EBS storage class instead of local-path
+  - patch: |-
+      - op: replace
+        path: /spec/storageClassName
+        value: gp3
+    target:
+      kind: PersistentVolumeClaim
+  # Remove NodePort (use LoadBalancer or Ingress instead)
+  - patch: |-
+      - op: replace
+        path: /spec/type
+        value: ClusterIP
+    target:
+      kind: Service
+      name: prometheus
 ```
 
 ---
@@ -383,6 +534,26 @@ kubectl rollout status deployment/otel-collector -n otel-poc
 docker build -t api-gateway:latest ./services/api-gateway
 kind load docker-image api-gateway:latest --name otel-poc
 kubectl rollout restart deployment/api-gateway -n otel-poc
+
+# Resource usage (requires metrics-server)
+kubectl top pods -n otel-poc
+kubectl top nodes
+
+# HPA status
+kubectl get hpa -n otel-poc
+
+# PDB status
+kubectl get pdb -n otel-poc
+
+# PVC status (check storage is bound)
+kubectl get pvc -n otel-poc
+
+# NetworkPolicy list
+kubectl get networkpolicy -n otel-poc
+
+# Check Prometheus alerts
+kubectl port-forward -n otel-poc svc/prometheus 9090:9090
+# then open http://localhost:9090/alerts
 ```
 
 ---
@@ -390,17 +561,32 @@ kubectl rollout restart deployment/api-gateway -n otel-poc
 ## OTel Collector Signal Flow
 
 ```
-Receivers          Processors              Exporters
-─────────    ──────────────────────    ─────────────────
-otlp gRPC ──▶ memory_limiter ──▶ batch ──▶ otlp/jaeger  (traces → :4317)
-otlp HTTP                            ──▶ prometheus    (metrics → :8889)
-                                     ──▶ loki          (logs → /loki/api/v1/push)
-                                     ──▶ logging       (debug stdout)
+Receivers       Processors                          Exporters
+─────────    ──────────────────────────────    ────────────────────────
+otlp gRPC ──▶ memory_limiter                  ┌▶ otlp/jaeger  (traces → :4317)
+otlp HTTP     ├─▶ tail_sampling ──▶ batch ────┘
+              │   (100% errors, 10% rest)
+              └─▶ transform/loki_labels        ┌▶ prometheus   (metrics → :8889)
+                  (enrich log attrs)            │▶ loki         (logs → /loki/api/v1/push)
+                  ──▶ batch ────────────────────┘▶ logging      (debug stdout)
 ```
 
-The collector also exposes:
-- `:13133` — health check endpoint (used by Kubernetes liveness/readiness probes)
-- `:8888` — collector's own internal metrics
+**Tail sampling** policies (configured on the collector):
+- `errors-policy`: 100% of traces containing an error span
+- `latency-policy`: 100% of traces with p99 > 500ms
+- `probabilistic-policy`: 10% of remaining successful traces
+
+All exporters use `sending_queue` + `retry_on_failure` for resilience.
+
+The collector exposes:
+- `:13133` — health check (Kubernetes liveness/readiness probes)
+- `:8888` — collector's own Prometheus metrics (scraped by Prometheus, visualized in the Collector Operations dashboard)
+
+---
+
+## Production Readiness
+
+See [`PRODUCTION_READINESS.md`](./PRODUCTION_READINESS.md) for a full checklist of gaps between this local POC and a production deployment, grouped by priority (critical → operational → EKS-specific → scalability).
 
 ---
 

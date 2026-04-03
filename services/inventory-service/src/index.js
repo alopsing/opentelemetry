@@ -4,7 +4,7 @@ require('./tracing');
 
 const express = require('express');
 const winston = require('winston');
-const { trace, context, metrics } = require('@opentelemetry/api');
+const { trace, context, metrics, SpanStatusCode } = require('@opentelemetry/api');
 const { OpenTelemetryTransportV3 } = require('@opentelemetry/winston-transport');
 
 const app = express();
@@ -118,6 +118,7 @@ app.get('/inventory/check', (req, res) => {
       });
     } catch (err) {
       span.recordException(err);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
       checksCounter.add(1, { item_id: req.query.itemId || 'unknown', result: 'error' });
       logger.error('Inventory check failed', { error: err.message });
       res.status(500).json({ error: 'Inventory check failed', details: err.message });

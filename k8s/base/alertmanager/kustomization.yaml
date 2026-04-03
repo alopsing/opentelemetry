@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - configmap.yaml
   - deployment.yaml
-  - pvc.yaml

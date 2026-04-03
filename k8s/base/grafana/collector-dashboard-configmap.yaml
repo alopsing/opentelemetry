@@ -1,0 +1,180 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-collector-dashboard
+  namespace: otel-poc
+data:
+  collector-ops.json: |
+    {
+      "title": "OTel Collector \u2014 Operational",
+      "uid": "collector-ops",
+      "refresh": "10s",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "schemaVersion": 36,
+      "version": 1,
+      "panels": [
+        {
+          "id": 1,
+          "title": "Spans Received vs Exported",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "datasource": { "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "uid": "prometheus" },
+              "expr": "rate(otelcol_receiver_accepted_spans_total[1m])",
+              "legendFormat": "Received"
+            },
+            {
+              "refId": "B",
+              "datasource": { "uid": "prometheus" },
+              "expr": "rate(otelcol_exporter_sent_spans_total[1m])",
+              "legendFormat": "Exported"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Export Failures",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Failed Spans" },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "green", "value": null },
+                        { "color": "red", "value": 0 }
+                      ]
+                    }
+                  },
+                  { "id": "custom.thresholdsStyle", "value": { "mode": "line" } }
+                ]
+              }
+            ]
+          },
+          "datasource": { "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "uid": "prometheus" },
+              "expr": "rate(otelcol_exporter_send_failed_spans_total[1m])",
+              "legendFormat": "Failed Spans {{exporter}}"
+            },
+            {
+              "refId": "B",
+              "datasource": { "uid": "prometheus" },
+              "expr": "rate(otelcol_exporter_send_failed_log_records_total[1m])",
+              "legendFormat": "Failed Logs {{exporter}}"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Exporter Queue Size",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "datasource": { "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "uid": "prometheus" },
+              "expr": "otelcol_exporter_queue_size",
+              "legendFormat": "Queue Size {{exporter}}"
+            },
+            {
+              "refId": "B",
+              "datasource": { "uid": "prometheus" },
+              "expr": "otelcol_exporter_queue_capacity",
+              "legendFormat": "Queue Capacity {{exporter}}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Collector Memory & CPU",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "CPU seconds/s" },
+                "properties": [
+                  { "id": "unit", "value": "s" },
+                  { "id": "custom.axisPlacement", "value": "right" }
+                ]
+              }
+            ]
+          },
+          "datasource": { "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "uid": "prometheus" },
+              "expr": "otelcol_process_memory_rss",
+              "legendFormat": "RSS Memory"
+            },
+            {
+              "refId": "B",
+              "datasource": { "uid": "prometheus" },
+              "expr": "rate(otelcol_process_cpu_seconds_total[1m])",
+              "legendFormat": "CPU seconds/s"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Log Records Received vs Exported",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "datasource": { "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "uid": "prometheus" },
+              "expr": "rate(otelcol_receiver_accepted_log_records_total[1m])",
+              "legendFormat": "Received"
+            },
+            {
+              "refId": "B",
+              "datasource": { "uid": "prometheus" },
+              "expr": "rate(otelcol_exporter_sent_log_records_total[1m])",
+              "legendFormat": "Exported"
+            }
+          ]
+        }
+      ]
+    }

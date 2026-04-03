@@ -15,14 +15,15 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus
       containers:
         - name: prometheus
           image: prom/prometheus:v2.51.0
           args:
             - "--config.file=/etc/prometheus/prometheus.yml"
             - "--storage.tsdb.path=/prometheus"
-            - "--storage.tsdb.retention.time=2h"
-            - "--storage.tsdb.retention.size=256MB"
+            - "--storage.tsdb.retention.time=7d"
+            - "--storage.tsdb.retention.size=1800MB"
             - "--web.console.libraries=/usr/share/prometheus/console_libraries"
             - "--web.console.templates=/usr/share/prometheus/consoles"
             - "--web.enable-lifecycle"
@@ -59,8 +60,8 @@ spec:
           configMap:
             name: prometheus-config
         - name: prometheus-storage
-          emptyDir:
-            sizeLimit: 512Mi
+          persistentVolumeClaim:
+            claimName: prometheus-storage
 ---
 apiVersion: v1
 kind: Service

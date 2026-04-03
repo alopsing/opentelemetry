@@ -115,7 +115,18 @@ apply_manifests() {
 }
 
 # ─────────────────────────────────────────────────────────────
-# 6. Wait for deployments to be ready
+# 6. Install metrics-server (required for HPA / kubectl top)
+# ─────────────────────────────────────────────────────────────
+install_metrics_server() {
+  log_info "Installing metrics-server..."
+  kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+  kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+  kubectl rollout status deployment/metrics-server -n kube-system --timeout=120s
+  log_success "metrics-server is ready."
+}
+
+# ─────────────────────────────────────────────────────────────
+# 7. Wait for deployments to be ready
 # ─────────────────────────────────────────────────────────────
 wait_for_deployments() {
   log_info "Waiting for deployments to be ready (timeout: 5 minutes each)..."
@@ -124,6 +135,7 @@ wait_for_deployments() {
     "otel-collector"
     "jaeger"
     "prometheus"
+    "alertmanager"
     "loki"
     "grafana"
     "inventory-service"
@@ -198,6 +210,7 @@ main() {
   build_images
   load_images
   apply_manifests
+  install_metrics_server
   wait_for_deployments
   print_access_info
 }

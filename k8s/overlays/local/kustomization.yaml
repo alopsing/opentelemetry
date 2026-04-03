@@ -6,3 +6,25 @@ namePrefix: ""
 labels:
   - pairs:
       environment: local
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "local"
+    target:
+      kind: Deployment
+      name: api-gateway
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "local"
+    target:
+      kind: Deployment
+      name: order-service
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "local"
+    target:
+      kind: Deployment
+      name: inventory-service

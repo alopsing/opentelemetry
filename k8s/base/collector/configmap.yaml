@@ -18,37 +18,88 @@ data:
             endpoint: 0.0.0.0:4318
 
     processors:
+      memory_limiter:
+        limit_mib: 512
+        check_interval: 1s
       batch:
         timeout: 1s
         send_batch_size: 1024
-      memory_limiter:
-        limit_mib: 256
-        check_interval: 1s
+      transform/loki_labels:
+        log_statements:
+          - context: log
+            statements:
+              - set(attributes["service.name"], resource.attributes["service.name"])
+              - set(attributes["deployment.environment"], resource.attributes["deployment.environment"])
+      tail_sampling:
+        decision_wait: 10s
+        num_traces: 50000
+        expected_new_traces_per_sec: 100
+        policies:
+          - name: errors-policy
+            type: status_code
+            status_code:
+              status_codes: [ERROR]
+          - name: slow-traces-policy
+            type: latency
+            latency:
+              threshold_ms: 500
+          - name: probabilistic-policy
+            type: probabilistic
+            probabilistic:
+              sampling_percentage: 10
 
     exporters:
       otlp/jaeger:
         endpoint: jaeger:4317
         tls:
           insecure: true
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 1000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
       prometheus:
         endpoint: "0.0.0.0:8889"
         namespace: otel
+        send_timestamps: true
+        metric_expiration: 3m
       loki:
         endpoint: http://loki:3100/loki/api/v1/push
         default_labels_enabled:
           exporter: false
           job: true
-          instance: true
+          instance: false
           level: true
+        labels:
+          attributes:
+            service.name: "service_name"
+            deployment.environment: "environment"
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 1000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
       logging:
-        verbosity: detailed
+        verbosity: normal
 
     service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:8888
+          level: detailed
       extensions: [health_check]
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, batch]
+          processors: [memory_limiter, tail_sampling, batch]
           exporters: [otlp/jaeger, logging]
         metrics:
           receivers: [otlp]
@@ -56,5 +107,5 @@ data:
           exporters: [prometheus, logging]
         logs:
           receivers: [otlp]
-          processors: [memory_limiter, batch]
+          processors: [memory_limiter, transform/loki_labels, batch]
           exporters: [loki, logging]

@@ -5,7 +5,11 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 COPY src/ ./src/
+
+USER appuser
 
 ENV NODE_ENV=production
 

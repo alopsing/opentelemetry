@@ -3,9 +3,12 @@ kind: Kustomization
 namespace: otel-poc
 resources:
   - namespace.yaml
+  - rbac/
+  - network-policies/
   - collector/
   - grafana/
   - jaeger/
   - loki/
   - prometheus/
+  - alertmanager/
   - services/

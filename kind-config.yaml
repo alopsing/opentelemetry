@@ -6,17 +6,10 @@ nodes:
     extraPortMappings:
       - containerPort: 30686
         hostPort: 16686
-        listenAddress: "0.0.0.0"
-        protocol: TCP
       - containerPort: 30300
         hostPort: 3000
-        listenAddress: "0.0.0.0"
-        protocol: TCP
       - containerPort: 30090
         hostPort: 9090
-        listenAddress: "0.0.0.0"
-        protocol: TCP
       - containerPort: 30080
         hostPort: 8080
-        listenAddress: "0.0.0.0"
-        protocol: TCP
+  - role: worker

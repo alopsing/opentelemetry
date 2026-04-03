@@ -37,6 +37,16 @@ data:
               name: TraceID
               url: '$${__value.raw}'
               urlDisplayLabel: 'View Trace'
+
+      - name: Alertmanager
+        type: alertmanager
+        uid: alertmanager
+        access: proxy
+        url: http://alertmanager:9093
+        editable: true
+        jsonData:
+          handleGrafanaManagedAlerts: false
+          implementation: prometheus
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -55,9 +65,16 @@ spec:
       labels:
         app: grafana
     spec:
+      serviceAccountName: grafana
       containers:
         - name: grafana
           image: grafana/grafana:10.4.0
+          securityContext:
+            runAsUser: 472
+            runAsGroup: 472
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           env:
             - name: GF_AUTH_ANONYMOUS_ENABLED
               value: "true"
@@ -82,6 +99,8 @@ spec:
               mountPath: /var/lib/grafana/dashboards
             - name: grafana-storage
               mountPath: /var/lib/grafana
+            - name: collector-dashboard-volume
+              mountPath: /var/lib/grafana/dashboards/collector
           resources:
             requests:
               memory: "128Mi"
@@ -113,6 +132,9 @@ spec:
             name: grafana-dashboards
         - name: grafana-storage
           emptyDir: {}
+        - name: collector-dashboard-volume
+          configMap:
+            name: grafana-collector-dashboard
 ---
 apiVersion: v1
 kind: Service

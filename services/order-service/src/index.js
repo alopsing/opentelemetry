@@ -5,7 +5,7 @@ require('./tracing');
 const express = require('express');
 const axios = require('axios');
 const winston = require('winston');
-const { trace, context, metrics } = require('@opentelemetry/api');
+const { trace, context, metrics, SpanStatusCode } = require('@opentelemetry/api');
 const { OpenTelemetryTransportV3 } = require('@opentelemetry/winston-transport');
 
 const app = express();
@@ -107,6 +107,7 @@ app.post('/order', async (req, res) => {
       });
     } catch (err) {
       span.recordException(err);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
       span.setAttributes({ 'order.status': 'error', 'error.message': err.message });
       ordersCounter.add(1, { status: 'error' });
       logger.error('Order processing failed', { error: err.message });
