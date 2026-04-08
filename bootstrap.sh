@@ -78,7 +78,7 @@ create_cluster() {
 build_images() {
   log_info "Building Docker images..."
 
-  local services=("api-gateway" "order-service" "inventory-service")
+  local services=("api-gateway" "order-service" "inventory-service" "product-service")
   for svc in "${services[@]}"; do
     log_info "Building ${svc}:latest..."
     docker build \
@@ -95,7 +95,7 @@ build_images() {
 load_images() {
   log_info "Loading Docker images into Kind cluster '${CLUSTER_NAME}'..."
 
-  local services=("api-gateway" "order-service" "inventory-service")
+  local services=("api-gateway" "order-service" "inventory-service" "product-service")
   for svc in "${services[@]}"; do
     log_info "Loading ${svc}:latest into kind..."
     kind load docker-image "${svc}:latest" --name "${CLUSTER_NAME}"
@@ -138,6 +138,8 @@ wait_for_deployments() {
     "alertmanager"
     "loki"
     "grafana"
+    "postgres"
+    "product-service"
     "inventory-service"
     "order-service"
     "api-gateway"

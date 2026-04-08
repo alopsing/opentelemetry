@@ -103,10 +103,87 @@ spec:
     - to:
         - podSelector:
             matchLabels:
+              app: product-service
+      ports:
+        - port: 3003
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
               app: otel-collector
       ports:
         - port: 4317
           protocol: TCP
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# ── product-service ───────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: product-service
+  namespace: otel-poc
+spec:
+  podSelector:
+    matchLabels:
+      app: product-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: inventory-service
+      ports:
+        - port: 3003
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - port: 4317
+          protocol: TCP
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# ── postgres ──────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres
+  namespace: otel-poc
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: product-service
+      ports:
+        - port: 5432
+          protocol: TCP
+  egress:
     - ports:
         - port: 53
           protocol: UDP
@@ -137,6 +214,9 @@ spec:
         - podSelector:
             matchLabels:
               app: inventory-service
+        - podSelector:
+            matchLabels:
+              app: product-service
       ports:
         - port: 4317
           protocol: TCP

@@ -7,33 +7,43 @@ A complete OpenTelemetry observability POC running on a local Kubernetes cluster
 ## Architecture
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│                          Kind Cluster (2 nodes)                   │
-│                                                                   │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────────┐       │
-│  │ api-gateway │───▶│ order-service│───▶│inventory-service│       │
-│  │  :3000 ×2   │    │  :3001 ×2   │    │   :3002 ×2     │       │
-│  └──────┬──────┘    └──────┬───────┘    └───────┬────────┘       │
-│         │                  │                    │                  │
-│         └──────────────────┴────────────────────┘                 │
-│                            │ OTLP gRPC (:4317)                    │
-│                     ┌──────▼──────┐                               │
-│                     │OTel Collector│ (:8888 self-metrics)         │
-│                     └──┬───┬───┬──┘                               │
-│                        │   │   │                                  │
-│              ┌─────────┘   │   └──────────┐                       │
-│              ▼             ▼              ▼                        │
-│          ┌───────┐  ┌──────────┐  ┌─────────┐                    │
-│          │Jaeger │  │Prometheus│  │  Loki   │                    │
-│          │badger │  │+ Alerts  │  │  PVC    │                    │
-│          │  PVC  │  └────┬─────┘  └────┬────┘                    │
-│          └───┬───┘       │  ┌──────────┘                         │
-│              │            ▼  ▼                                    │
-│              │     ┌─────────────┐   ┌──────────────┐            │
-│              │     │ Alertmanager│   │   Grafana    │            │
-│              │     └─────────────┘   │(2 dashboards)│            │
-│              └─────────────────────▶ └──────────────┘            │
-└───────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            Kind Cluster (2 nodes)                            │
+│                                                                              │
+│  ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐                 │
+│  │ api-gateway │───▶│ order-service│───▶│inventory-service│                 │
+│  │  :3000 ×2   │    │  :3001 ×2   │    │   :3002 ×2      │                 │
+│  └──────┬──────┘    └──────┬───────┘    └────────┬────────┘                 │
+│         │                  │                     │ HTTP                      │
+│         │                  │            ┌────────▼────────┐                 │
+│         │                  │            │ product-service  │                 │
+│         │                  │            │   :3003 ×2       │                │
+│         │                  │            └────────┬────────┘                 │
+│         │                  │                     │ SQL                      │
+│         │                  │            ┌────────▼────────┐                 │
+│         │                  │            │   PostgreSQL 16  │                 │
+│         │                  │            │ 10 products+seed │                │
+│         │                  │            └─────────────────┘                 │
+│         │                  │                                                │
+│         └──────────────────┴─────────────────────────────┐                 │
+│                            │ OTLP gRPC (:4317) — all 4 services             │
+│                     ┌──────▼──────┐                                         │
+│                     │OTel Collector│ (:8888 self-metrics)                   │
+│                     └──┬───┬───┬──┘                                         │
+│                        │   │   │                                            │
+│              ┌─────────┘   │   └──────────┐                                 │
+│              ▼             ▼              ▼                                  │
+│          ┌───────┐  ┌──────────┐  ┌─────────┐                              │
+│          │Jaeger │  │Prometheus│  │  Loki   │                              │
+│          │badger │  │+ Alerts  │  │  PVC    │                              │
+│          │  PVC  │  └────┬─────┘  └────┬────┘                              │
+│          └───┬───┘       │  ┌──────────┘                                   │
+│              │            ▼  ▼                                              │
+│              │     ┌─────────────┐   ┌──────────────┐                      │
+│              │     │ Alertmanager│   │   Grafana    │                      │
+│              │     └─────────────┘   │(2 dashboards)│                      │
+│              └─────────────────────▶ └──────────────┘                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Services
@@ -42,7 +52,23 @@ A complete OpenTelemetry observability POC running on a local Kubernetes cluster
 |---|---|---|
 | `api-gateway` | 3000 | Entry point — receives HTTP requests, calls order-service |
 | `order-service` | 3001 | Validates orders, calls inventory-service |
-| `inventory-service` | 3002 | Checks stock availability |
+| `inventory-service` | 3002 | Checks stock via product-service (replaced in-memory map) |
+| `product-service` | 3003 | Queries PostgreSQL for product details and stock levels |
+| `postgres` | 5432 | PostgreSQL 16 — 10 mock products + seed orders, 2Gi PVC |
+
+### End-to-End Trace Flow
+
+A single `POST /order` produces a **4-service, 1-database** distributed trace visible in Jaeger:
+
+```
+api-gateway (HTTP span)
+  └─ order-service (HTTP span + process-order span)
+       └─ inventory-service (HTTP span + check-stock span)
+            └─ product-service (HTTP span + get-product span)
+                 └─ postgresql (DB span — db.system=postgresql, db.statement=SELECT ...)
+```
+
+DB spans include `db.system`, `db.statement` (sanitized), `net.peer.name`, and `db.name` attributes — visible as the deepest leaf in every Jaeger trace.
 
 ### Observability Stack
 
@@ -81,11 +107,11 @@ A complete OpenTelemetry observability POC running on a local Kubernetes cluster
 The script runs 8 steps:
 1. Checks prerequisites (`docker`, `kind`, `kubectl`)
 2. Creates a Kind cluster named `otel-poc` with 1 control-plane + 1 worker node (idempotent — skips if exists)
-3. Builds Docker images for all 3 services
+3. Builds Docker images for all 4 services (`api-gateway`, `order-service`, `inventory-service`, `product-service`)
 4. Loads images into Kind (no registry needed)
-5. Applies all Kubernetes manifests via `kubectl apply -k k8s/overlays/local/`
+5. Applies all Kubernetes manifests via `kubectl apply -k k8s/overlays/local/` (includes PostgreSQL + init SQL)
 6. Installs `metrics-server` (required for HPA / `kubectl top`)
-7. Waits for all deployments to be ready (5 min timeout each)
+7. Waits for all deployments to be ready (5 min timeout each, postgres + product-service first)
 8. Prints access URLs
 
 ---
@@ -141,6 +167,37 @@ curl http://localhost:8080/health
 curl http://localhost:8081/health   # order-service (if port-forwarded)
 curl http://localhost:8082/health   # inventory-service (if port-forwarded)
 ```
+
+### Browse the product catalogue (triggers DB spans)
+
+```bash
+# Port-forward product-service
+kubectl port-forward -n otel-poc svc/product-service 3003:3003
+
+# List all 10 products
+curl -s http://localhost:3003/products | jq .
+
+# Look up a specific product (triggers SELECT with db span in Jaeger)
+curl -s http://localhost:3003/products/item-001 | jq .
+
+# Out-of-stock item
+curl -s http://localhost:3003/products/item-002 | jq .
+```
+
+Mock product catalogue seeded in PostgreSQL:
+
+| Product ID | Name | Stock | Category |
+|---|---|---|---|
+| item-001 | Widget A | 42 | Widgets |
+| item-002 | Widget B | 0 (out of stock) | Widgets |
+| item-003 | Widget C | 15 | Widgets |
+| item-004 | Widget D | 7 | Widgets |
+| item-005 | Gadget Pro | 23 | Gadgets |
+| item-006 | Gadget Lite | 50 | Gadgets |
+| item-007 | Component X | 200 | Components |
+| item-008 | Component Y | 0 (out of stock) | Components |
+| item-009 | Super Widget | 3 | Widgets |
+| item-010 | Starter Kit | 10 | Kits |
 
 ---
 

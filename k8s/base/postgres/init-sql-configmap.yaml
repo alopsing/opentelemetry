@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: otel-poc
+data:
+  01-schema.sql: |
+    -- Products table: catalogue with price and SKU
+    CREATE TABLE IF NOT EXISTS products (
+      id             SERIAL PRIMARY KEY,
+      product_id     VARCHAR(20)    NOT NULL UNIQUE,
+      name           VARCHAR(100)   NOT NULL,
+      description    TEXT,
+      category       VARCHAR(50)    NOT NULL,
+      price          NUMERIC(10,2)  NOT NULL,
+      stock_quantity INTEGER        NOT NULL DEFAULT 0,
+      sku            VARCHAR(30)    NOT NULL UNIQUE,
+      created_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+    );
+
+    -- Orders table: tracks every placed order for audit/reporting
+    CREATE TABLE IF NOT EXISTS orders (
+      id          SERIAL PRIMARY KEY,
+      order_id    VARCHAR(36)  NOT NULL UNIQUE,
+      user_id     VARCHAR(50)  NOT NULL,
+      product_id  VARCHAR(20)  NOT NULL REFERENCES products(product_id),
+      quantity    INTEGER      NOT NULL DEFAULT 1,
+      status      VARCHAR(20)  NOT NULL DEFAULT 'placed',
+      placed_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_orders_user_id    ON orders(user_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_product_id ON orders(product_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_status     ON orders(status);
+
+  02-seed.sql: |
+    -- Mock product catalogue
+    INSERT INTO products (product_id, name, description, category, price, stock_quantity, sku) VALUES
+      ('item-001', 'Widget A',        'High-quality aluminium widget for general use',   'Widgets',    19.99,  42, 'WGT-A-001'),
+      ('item-002', 'Widget B',        'Precision-machined widget — limited stock',        'Widgets',    34.99,   0, 'WGT-B-002'),
+      ('item-003', 'Widget C',        'Economy-grade widget, bulk-pack available',        'Widgets',     9.99,  15, 'WGT-C-003'),
+      ('item-004', 'Widget D',        'Premium widget with lifetime warranty',            'Widgets',    59.99,   7, 'WGT-D-004'),
+      ('item-005', 'Gadget Pro',      'Bluetooth-enabled smart gadget',                   'Gadgets',    99.99,  23, 'GDG-PRO-005'),
+      ('item-006', 'Gadget Lite',     'Entry-level gadget for everyday use',              'Gadgets',    49.99,  50, 'GDG-LTE-006'),
+      ('item-007', 'Component X',     'PCB-mount component, RoHS compliant',              'Components',  4.99, 200, 'CMP-X-007'),
+      ('item-008', 'Component Y',     'High-temp rated component, industrial grade',      'Components', 12.49,   0, 'CMP-Y-008'),
+      ('item-009', 'Super Widget',    'Next-gen widget with self-healing surface',        'Widgets',    89.99,   3, 'WGT-SUP-009'),
+      ('item-010', 'Starter Kit',     'All-in-one starter kit with Widget A + Gadget Lite', 'Kits',   59.99,  10, 'KIT-STR-010')
+    ON CONFLICT (product_id) DO NOTHING;
+
+    -- A few sample historical orders (for dashboard visualisation)
+    INSERT INTO orders (order_id, user_id, product_id, quantity, status, placed_at) VALUES
+      ('ord-0001', 'user-001', 'item-001', 1, 'fulfilled', NOW() - INTERVAL '2 hours'),
+      ('ord-0002', 'user-002', 'item-003', 2, 'fulfilled', NOW() - INTERVAL '90 minutes'),
+      ('ord-0003', 'user-003', 'item-002', 1, 'failed',    NOW() - INTERVAL '60 minutes'),
+      ('ord-0004', 'user-001', 'item-005', 1, 'fulfilled', NOW() - INTERVAL '45 minutes'),
+      ('ord-0005', 'user-004', 'item-008', 3, 'failed',    NOW() - INTERVAL '30 minutes'),
+      ('ord-0006', 'user-002', 'item-010', 1, 'placed',    NOW() - INTERVAL '10 minutes')
+    ON CONFLICT (order_id) DO NOTHING;

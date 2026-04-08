@@ -4,5 +4,6 @@ resources:
   - api-gateway.yaml
   - order-service.yaml
   - inventory-service.yaml
+  - product-service.yaml
   - pdb.yaml
   - hpa.yaml

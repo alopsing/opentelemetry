@@ -52,6 +52,8 @@ spec:
               value: "3002"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector:4317"
+            - name: PRODUCT_SERVICE_URL
+              value: "http://product-service:3003"
           resources:
             requests:
               memory: "128Mi"

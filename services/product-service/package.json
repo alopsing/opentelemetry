@@ -1,0 +1,27 @@
+{
+  "name": "product-service",
+  "version": "1.0.0",
+  "description": "Product Service for OpenTelemetry POC — queries PostgreSQL with full OTel instrumentation",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node -r ./src/tracing.js src/index.js",
+    "dev": "node -r ./src/tracing.js src/index.js"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.57.0",
+    "@opentelemetry/instrumentation-pg": "^0.46.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.57.0",
+    "@opentelemetry/exporter-metrics-otlp-grpc": "^0.57.0",
+    "@opentelemetry/exporter-logs-otlp-grpc": "^0.57.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/semantic-conventions": "^1.28.0",
+    "@opentelemetry/sdk-metrics": "^1.30.0",
+    "@opentelemetry/sdk-logs": "^0.57.0",
+    "@opentelemetry/winston-transport": "^0.9.0",
+    "express": "^4.19.0",
+    "pg": "^8.12.0",
+    "winston": "^3.13.0"
+  }
+}

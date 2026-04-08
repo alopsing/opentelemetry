@@ -30,3 +30,14 @@ spec:
   selector:
     matchLabels:
       app: inventory-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: product-service-pdb
+  namespace: otel-poc
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: product-service
