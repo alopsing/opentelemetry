@@ -6,44 +6,34 @@ A complete OpenTelemetry observability POC running on a local Kubernetes cluster
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                            Kind Cluster (2 nodes)                            │
-│                                                                              │
-│  ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐                 │
-│  │ api-gateway │───▶│ order-service│───▶│inventory-service│                 │
-│  │  :3000 ×2   │    │  :3001 ×2   │    │   :3002 ×2      │                 │
-│  └──────┬──────┘    └──────┬───────┘    └────────┬────────┘                 │
-│         │                  │                     │ HTTP                      │
-│         │                  │            ┌────────▼────────┐                 │
-│         │                  │            │ product-service  │                 │
-│         │                  │            │   :3003 ×2       │                │
-│         │                  │            └────────┬────────┘                 │
-│         │                  │                     │ SQL                      │
-│         │                  │            ┌────────▼────────┐                 │
-│         │                  │            │   PostgreSQL 16  │                 │
-│         │                  │            │ 10 products+seed │                │
-│         │                  │            └─────────────────┘                 │
-│         │                  │                                                │
-│         └──────────────────┴─────────────────────────────┐                 │
-│                            │ OTLP gRPC (:4317) — all 4 services             │
-│                     ┌──────▼──────┐                                         │
-│                     │OTel Collector│ (:8888 self-metrics)                   │
-│                     └──┬───┬───┬──┘                                         │
-│                        │   │   │                                            │
-│              ┌─────────┘   │   └──────────┐                                 │
-│              ▼             ▼              ▼                                  │
-│          ┌───────┐  ┌──────────┐  ┌─────────┐                              │
-│          │Jaeger │  │Prometheus│  │  Loki   │                              │
-│          │badger │  │+ Alerts  │  │  PVC    │                              │
-│          │  PVC  │  └────┬─────┘  └────┬────┘                              │
-│          └───┬───┘       │  ┌──────────┘                                   │
-│              │            ▼  ▼                                              │
-│              │     ┌─────────────┐   ┌──────────────┐                      │
-│              │     │ Alertmanager│   │   Grafana    │                      │
-│              │     └─────────────┘   │(2 dashboards)│                      │
-│              └─────────────────────▶ └──────────────┘                      │
-└──────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+  subgraph Kind["Kind Cluster (2 nodes)"]
+    AG["api-gateway<br/>:3000 x2"]
+    OS["order-service<br/>:3001 x2"]
+    IS["inventory-service<br/>:3002 x2"]
+    PS["product-service<br/>:3003 x2"]
+    DB[("PostgreSQL 16<br/>10 products + seed")]
+    OTEL["OTel Collector<br/>OTLP gRPC :4317<br/>self-metrics :8888"]
+
+    AG --> OS
+    OS --> IS
+    IS -->|HTTP| PS
+    PS -->|SQL| DB
+
+    AG -->|OTLP| OTEL
+    OS -->|OTLP| OTEL
+    IS -->|OTLP| OTEL
+    PS -->|OTLP| OTEL
+  end
+
+  OTEL --> JAEGER["Jaeger<br/>badger PVC"]
+  OTEL --> PROM["Prometheus<br/>alerts + PVC"]
+  OTEL --> LOKI["Loki<br/>PVC"]
+  PROM --> ALERT["Alertmanager"]
+  JAEGER --> GRAFANA["Grafana<br/>2 dashboards"]
+  PROM --> GRAFANA
+  LOKI --> GRAFANA
 ```
 
 ### Services
@@ -60,12 +50,23 @@ A complete OpenTelemetry observability POC running on a local Kubernetes cluster
 
 A single `POST /order` produces a **4-service, 1-database** distributed trace visible in Jaeger:
 
-```
-api-gateway (HTTP span)
-  └─ order-service (HTTP span + process-order span)
-       └─ inventory-service (HTTP span + check-stock span)
-            └─ product-service (HTTP span + get-product span)
-                 └─ postgresql (DB span — db.system=postgresql, db.statement=SELECT ...)
+```mermaid
+sequenceDiagram
+  autonumber
+  participant API as api-gateway
+  participant ORDER as order-service
+  participant INVENTORY as inventory-service
+  participant PRODUCT as product-service
+  participant DB as postgresql
+
+  API->>ORDER: HTTP span + process-order span
+  ORDER->>INVENTORY: HTTP span + check-stock span
+  INVENTORY->>PRODUCT: HTTP span + get-product span
+  PRODUCT->>DB: DB span (SELECT ...)
+  DB-->>PRODUCT: product row
+  PRODUCT-->>INVENTORY: stock result
+  INVENTORY-->>ORDER: availability result
+  ORDER-->>API: order status
 ```
 
 DB spans include `db.system`, `db.statement` (sanitized), `net.peer.name`, and `db.name` attributes — visible as the deepest leaf in every Jaeger trace.
